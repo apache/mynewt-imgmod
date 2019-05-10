@@ -151,6 +151,9 @@ func DecryptImage(img image.Image, privKeBytes []byte) (image.Image, error) {
 	}
 
 	img.Body = body
+
+	img.Header.Flags &^= image.IMAGE_F_ENCRYPTED
+
 	return img, nil
 }
 
@@ -184,6 +187,8 @@ func EncryptImage(img image.Image, pubKeBytes []byte) (image.Image, error) {
 		return img, err
 	}
 	img.Tlvs = append(img.Tlvs, tlv)
+
+	img.Header.Flags |= image.IMAGE_F_ENCRYPTED
 
 	return img, nil
 }
