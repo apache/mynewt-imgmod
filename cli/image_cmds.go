@@ -310,6 +310,11 @@ func runHashableCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(cmd, err)
 	}
 
+	if (img.Header.Flags & image.IMAGE_F_ENCRYPTED) != 0 {
+		util.StatusMessage(util.VERBOSITY_QUIET,
+			"* Warning: extracting hashable content from an encrypted image\n")
+	}
+
 	f, err := os.Create(outFilename)
 	if err != nil {
 		ImgmodUsage(nil, util.ChildNewtError(err))
