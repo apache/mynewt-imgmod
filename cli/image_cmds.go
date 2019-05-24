@@ -510,19 +510,19 @@ func AddImageCommands(cmd *cobra.Command) {
 
 	imageCmd.AddCommand(signCmd)
 
-	addtlvsCmd := &cobra.Command{
-		Use: "addtlvs <img-file> <tlv-type> <data-filename> " +
+	addTlvsCmd := &cobra.Command{
+		Use: "addTlvs <img-file> <tlv-type> <data-filename> " +
 			"[tlv-type] [data-filename] [...]",
 		Short: "Adds the specified TLVs to a Mynewt image file",
 		Run:   runAddTlvsCmd,
 	}
 
-	addtlvsCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o", "",
+	addTlvsCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o", "",
 		"File to write to")
-	addtlvsCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
+	addTlvsCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
 		"Replace input file")
 
-	imageCmd.AddCommand(addtlvsCmd)
+	imageCmd.AddCommand(addTlvsCmd)
 
 	rmtlvsCmd := &cobra.Command{
 		Use:   "rmtlvs <img-file> <tlv-index> [tlv-index] [...]",
