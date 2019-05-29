@@ -28,12 +28,12 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"mynewt.apache.org/imgmod/imfg"
 	"mynewt.apache.org/newt/artifact/flash"
 	"mynewt.apache.org/newt/artifact/manifest"
 	"mynewt.apache.org/newt/artifact/mfg"
 	"mynewt.apache.org/newt/artifact/misc"
 	"mynewt.apache.org/newt/artifact/sec"
-	"mynewt.apache.org/imgmod/imfg"
 	"mynewt.apache.org/newt/util"
 )
 
@@ -220,7 +220,7 @@ func runJoinCmd(cmd *cobra.Command, args []string) {
 			"Error reading source mfg directory: %s", err.Error()))
 	}
 	for _, info := range infos {
-		if info.Name() != mfg.MFG_IMG_FILENAME {
+		if info.Name() != mfg.MFG_BIN_IMG_FILENAME {
 			src := splitDir + "/mfg/" + info.Name()
 			dst := outDir + "/" + info.Name()
 			if info.IsDir() {
@@ -239,7 +239,7 @@ func runJoinCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(nil, err)
 	}
 
-	binPath := fmt.Sprintf("%s/%s", outDir, mfg.MFG_IMG_FILENAME)
+	binPath := fmt.Sprintf("%s/%s", outDir, mfg.MFG_BIN_IMG_FILENAME)
 	if err := WriteFile(finalBin, binPath); err != nil {
 		ImgmodUsage(nil, err)
 	}

@@ -27,3 +27,5 @@ golang.org/x/sys v0.0.0-20180905080454-ebe1bf3edb33 h1:I6FyU15t786LL7oL/hn43zqTu
 golang.org/x/sys v0.0.0-20180905080454-ebe1bf3edb33/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 mynewt.apache.org/newt v0.0.0-20190314184600-c5632c20daf3 h1:U9HanOWwCKSPTCZu7ti0MlmMlkWpTiR856BR2bRzHaU=
 mynewt.apache.org/newt v0.0.0-20190314184600-c5632c20daf3/go.mod h1:lFsPYOHxMMWA11pydOeh0GVFiXtx0A9VnzOQ6SiRR88=
+mynewt.apache.org/newt v0.0.0-20190529170335-75b2c282a77d h1:dnv0EBSSD88NahC0Pow+5DOH7gy4D5xj5n1iCIxA2NY=
+mynewt.apache.org/newt v0.0.0-20190529170335-75b2c282a77d/go.mod h1:lFsPYOHxMMWA11pydOeh0GVFiXtx0A9VnzOQ6SiRR88=
