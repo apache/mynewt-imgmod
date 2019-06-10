@@ -29,9 +29,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"mynewt.apache.org/imgmod/iimg"
 	"mynewt.apache.org/newt/artifact/image"
 	"mynewt.apache.org/newt/artifact/sec"
-	"mynewt.apache.org/imgmod/iimg"
 	"mynewt.apache.org/newt/util"
 )
 
@@ -310,6 +310,11 @@ func runHashableCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(cmd, err)
 	}
 
+	if (img.Header.Flags & image.IMAGE_F_ENCRYPTED) != 0 {
+		util.StatusMessage(util.VERBOSITY_QUIET,
+			"* Warning: extracting hashable content from an encrypted image\n")
+	}
+
 	f, err := os.Create(outFilename)
 	if err != nil {
 		ImgmodUsage(nil, util.ChildNewtError(err))
@@ -434,6 +439,40 @@ func runDecryptCmd(cmd *cobra.Command, args []string) {
 	}
 }
 
+func runDecryptFullCmd(cmd *cobra.Command, args []string) {
+	if len(args) < 2 {
+		ImgmodUsage(cmd, nil)
+	}
+
+	imgFilename := args[0]
+	keyFilename := args[1]
+
+	outFilename, err := CalcOutFilename(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	img, err := readImage(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	keyBytes, err := ioutil.ReadFile(keyFilename)
+	if err != nil {
+		ImgmodUsage(cmd, util.FmtNewtError(
+			"Error reading key file: %s", err.Error()))
+	}
+
+	img, err = iimg.DecryptImageFull(img, keyBytes)
+	if err != nil {
+		ImgmodUsage(nil, err)
+	}
+
+	if err := writeImage(img, outFilename); err != nil {
+		ImgmodUsage(nil, err)
+	}
+}
+
 func runEncryptCmd(cmd *cobra.Command, args []string) {
 	if len(args) < 2 {
 		ImgmodUsage(cmd, nil)
@@ -459,6 +498,40 @@ func runEncryptCmd(cmd *cobra.Command, args []string) {
 	}
 
 	img, err = iimg.EncryptImage(img, keyBytes)
+	if err != nil {
+		ImgmodUsage(nil, err)
+	}
+
+	if err := writeImage(img, outFilename); err != nil {
+		ImgmodUsage(nil, err)
+	}
+}
+
+func runEncryptFullCmd(cmd *cobra.Command, args []string) {
+	if len(args) < 2 {
+		ImgmodUsage(cmd, nil)
+	}
+
+	imgFilename := args[0]
+	keyFilename := args[1]
+
+	outFilename, err := CalcOutFilename(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	img, err := readImage(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	keyBytes, err := ioutil.ReadFile(keyFilename)
+	if err != nil {
+		ImgmodUsage(cmd, util.FmtNewtError(
+			"Error reading key file: %s", err.Error()))
+	}
+
+	img, err = iimg.EncryptImageFull(img, keyBytes)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
@@ -505,19 +578,19 @@ func AddImageCommands(cmd *cobra.Command) {
 
 	imageCmd.AddCommand(signCmd)
 
-	addtlvsCmd := &cobra.Command{
-		Use: "addtlvs <img-file> <tlv-type> <data-filename> " +
+	addTlvsCmd := &cobra.Command{
+		Use: "addTlvs <img-file> <tlv-type> <data-filename> " +
 			"[tlv-type] [data-filename] [...]",
 		Short: "Adds the specified TLVs to a Mynewt image file",
 		Run:   runAddTlvsCmd,
 	}
 
-	addtlvsCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o", "",
+	addTlvsCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o", "",
 		"File to write to")
-	addtlvsCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
+	addTlvsCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
 		"Replace input file")
 
-	imageCmd.AddCommand(addtlvsCmd)
+	imageCmd.AddCommand(addTlvsCmd)
 
 	rmtlvsCmd := &cobra.Command{
 		Use:   "rmtlvs <img-file> <tlv-index> [tlv-index] [...]",
@@ -571,8 +644,13 @@ func AddImageCommands(cmd *cobra.Command) {
 
 	decryptCmd := &cobra.Command{
 		Use:   "decrypt <image> <priv-key-der>",
-		Short: "Decrypts an encrypted Mynewt image file",
-		Run:   runDecryptCmd,
+		Short: "Decrypts an encrypted Mynewt image file (partial)",
+		Long: "Decrypts the body of an encrypted Mynewt image file and " +
+			"removes the encryption TLVs.  This command does not change the " +
+			"image header and does not recalculate the image hash.  This " +
+			"command is useful for re-signing an image with a new key prior " +
+			"to re-encrypting.",
+		Run: runDecryptCmd,
 	}
 
 	decryptCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o",
@@ -580,12 +658,29 @@ func AddImageCommands(cmd *cobra.Command) {
 	decryptCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
 		"Replace input file")
 
-	imageCmd.AddCommand(decryptCmd)
+	decryptFullCmd := &cobra.Command{
+		Use:   "decryptfull <image> <priv-key-der>",
+		Short: "Decrypts an encrypted Mynewt image file (full)",
+		Long: "Decrypts the body of an encrypted Mynewt image file, " +
+			"removes the encryption TLVs, clears the 'encrypted' flag in " +
+			"the image header, and recalculates the image hash.",
+		Run: runDecryptFullCmd,
+	}
+
+	decryptFullCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o",
+		"", "File to write to")
+	decryptFullCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
+		"Replace input file")
+
+	imageCmd.AddCommand(decryptFullCmd)
 
 	encryptCmd := &cobra.Command{
 		Use:   "encrypt <image> <priv-key-der>",
 		Short: "Encrypts a Mynewt image file",
-		Run:   runEncryptCmd,
+		Long: "Encrypts the body of an encrypted Mynewt image file and " +
+			"adds encryption TLVs.  This command does not change the " +
+			"image header and does not recalculate the image hash.",
+		Run: runEncryptCmd,
 	}
 
 	encryptCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o",
@@ -594,4 +689,20 @@ func AddImageCommands(cmd *cobra.Command) {
 		"Replace input file")
 
 	imageCmd.AddCommand(encryptCmd)
+
+	encryptFullCmd := &cobra.Command{
+		Use:   "encryptfull <image> <priv-key-der>",
+		Short: "Encrypts an encrypted Mynewt image file (full)",
+		Long: "Encrypts the body of an encrypted Mynewt image file, " +
+			"adds encryption TLVs, sets the 'encrypted' flag in " +
+			"the image header, and recalculates the image hash.",
+		Run: runEncryptFullCmd,
+	}
+
+	encryptFullCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o",
+		"", "File to write to")
+	encryptFullCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
+		"Replace input file")
+
+	imageCmd.AddCommand(encryptFullCmd)
 }

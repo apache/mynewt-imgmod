@@ -152,7 +152,44 @@ func DecryptImage(img image.Image, privKeBytes []byte) (image.Image, error) {
 
 	img.Body = body
 
+	return img, nil
+}
+
+func recalcHash(img image.Image) (image.Image, error) {
+	hash, err := img.CalcHash()
+	if err != nil {
+		return img, err
+	}
+
+	img.RemoveTlvsWithType(image.IMAGE_TLV_SHA256)
+	img.Tlvs = append(img.Tlvs, image.ImageTlv{
+		Header: image.ImageTlvHdr{
+			Type: image.IMAGE_TLV_SHA256,
+			Pad:  0,
+			Len:  uint16(len(hash)),
+		},
+		Data: hash,
+	})
+
+	return img, nil
+}
+
+func DecryptImageFull(img image.Image,
+	privKeBytes []byte) (image.Image, error) {
+
+	var err error
+	img, err = DecryptImage(img, privKeBytes)
+	if err != nil {
+		return img, err
+	}
+
 	img.Header.Flags &^= image.IMAGE_F_ENCRYPTED
+
+	// The hash needs to be recalculated now that the header has changed.
+	img, err = recalcHash(img)
+	if err != nil {
+		return img, err
+	}
 
 	return img, nil
 }
@@ -189,6 +226,26 @@ func EncryptImage(img image.Image, pubKeBytes []byte) (image.Image, error) {
 	img.Tlvs = append(img.Tlvs, tlv)
 
 	img.Header.Flags |= image.IMAGE_F_ENCRYPTED
+
+	return img, nil
+}
+
+func EncryptImageFull(img image.Image,
+	pubKeBytes []byte) (image.Image, error) {
+
+	var err error
+	img, err = EncryptImage(img, pubKeBytes)
+	if err != nil {
+		return img, err
+	}
+
+	img.Header.Flags |= image.IMAGE_F_ENCRYPTED
+
+	// The hash needs to be recalculated now that the header has changed.
+	img, err = recalcHash(img)
+	if err != nil {
+		return img, err
+	}
 
 	return img, nil
 }
