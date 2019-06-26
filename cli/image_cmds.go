@@ -26,12 +26,14 @@ import (
 	"os"
 	"sort"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/apache/mynewt-artifact/image"
+	"github.com/apache/mynewt-artifact/manifest"
+	"github.com/apache/mynewt-artifact/sec"
 	"mynewt.apache.org/imgmod/iimg"
-	"mynewt.apache.org/newt/artifact/image"
-	"mynewt.apache.org/newt/artifact/sec"
 	"mynewt.apache.org/newt/util"
 )
 
@@ -146,7 +148,7 @@ func runSignCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(cmd, err)
 	}
 
-	keys, err := sec.ReadKeys(args[1:])
+	keys, err := sec.ReadPrivSignKeys(args[1:])
 	if err != nil {
 		ImgmodUsage(cmd, err)
 	}
@@ -467,7 +469,6 @@ func runDecryptFullCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
-
 	if err := writeImage(img, outFilename); err != nil {
 		ImgmodUsage(nil, err)
 	}
@@ -541,6 +542,101 @@ func runEncryptFullCmd(cmd *cobra.Command, args []string) {
 	}
 }
 
+func runVerifyCmd(cmd *cobra.Command, args []string) {
+	anyFails := false
+
+	if len(args) < 1 {
+		ImgmodUsage(cmd, nil)
+	}
+
+	imgFilename := args[0]
+
+	img, err := readImage(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	st := ""
+	if err := img.VerifyStructure(); err != nil {
+		st = fmt.Sprintf("BAD (%s)", err.Error())
+		anyFails = true
+	} else {
+		st = "good"
+	}
+
+	kes, err := sec.ReadPrivEncKeys(OptEncKeys)
+	if err != nil {
+		ImgmodUsage(nil, errors.Wrapf(err,
+			"error reading encryption key file"))
+	}
+
+	ha := ""
+	if img.IsEncrypted() && len(kes) == 0 {
+		ha = "not checked (image encrypted; no keys specified)"
+	} else {
+		keyIdx, err := img.VerifyHash(kes)
+		if err != nil {
+			ha = fmt.Sprintf("BAD (%s)", err.Error())
+			anyFails = true
+		} else {
+			ha = "good"
+			if keyIdx != -1 {
+				ha += fmt.Sprintf(" (%s)", OptEncKeys[keyIdx])
+			}
+		}
+	}
+
+	iss, err := sec.ReadPubSignKeys(OptSignKeys)
+	if err != nil {
+		ImgmodUsage(nil, errors.Wrapf(err,
+			"error reading signing key file"))
+	}
+
+	sigs, err := img.CollectSigs()
+	if err != nil {
+		ImgmodUsage(nil, err)
+	}
+
+	si := ""
+	if len(sigs) == 0 {
+		si = "n/a"
+	} else if len(iss) == 0 {
+		si = "not checked"
+	} else {
+		idx, err := img.VerifySigs(iss)
+		if err != nil {
+			si = fmt.Sprintf("BAD (%s)", err.Error())
+			anyFails = true
+		} else {
+			si = fmt.Sprintf("good (%s)", OptSignKeys[idx])
+		}
+	}
+
+	ma := "n/a"
+	if OptManifest != "" {
+		man, err := manifest.ReadManifest(OptManifest)
+		if err != nil {
+			ImgmodUsage(nil, err)
+		}
+
+		if err := img.VerifyManifest(man); err != nil {
+			ma = fmt.Sprintf("BAD (%s)", err.Error())
+			anyFails = true
+		} else {
+			ma = "good"
+		}
+	}
+
+	fmt.Printf(" structure: %s\n", st)
+	fmt.Printf("      hash: %s\n", ha)
+	fmt.Printf("signatures: %s\n", si)
+	fmt.Printf("  manifest: %s\n", ma)
+
+	if anyFails {
+		os.Exit(94) // EBADMSG
+	}
+}
+
 func AddImageCommands(cmd *cobra.Command) {
 	imageCmd := &cobra.Command{
 		Use:   "image",
@@ -579,7 +675,7 @@ func AddImageCommands(cmd *cobra.Command) {
 	imageCmd.AddCommand(signCmd)
 
 	addTlvsCmd := &cobra.Command{
-		Use: "addTlvs <img-file> <tlv-type> <data-filename> " +
+		Use: "addtlvs <img-file> <tlv-type> <data-filename> " +
 			"[tlv-type] [data-filename] [...]",
 		Short: "Adds the specified TLVs to a Mynewt image file",
 		Run:   runAddTlvsCmd,
@@ -658,6 +754,8 @@ func AddImageCommands(cmd *cobra.Command) {
 	decryptCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
 		"Replace input file")
 
+	imageCmd.AddCommand(decryptCmd)
+
 	decryptFullCmd := &cobra.Command{
 		Use:   "decryptfull <image> <priv-key-der>",
 		Short: "Decrypts an encrypted Mynewt image file (full)",
@@ -705,4 +803,19 @@ func AddImageCommands(cmd *cobra.Command) {
 		"Replace input file")
 
 	imageCmd.AddCommand(encryptFullCmd)
+
+	verifyCmd := &cobra.Command{
+		Use:   "verify <image>",
+		Short: "Verifies an Mynewt image's integrity",
+		Run:   runVerifyCmd,
+	}
+
+	verifyCmd.PersistentFlags().StringSliceVar(&OptSignKeys, "signkey",
+		nil, "Public signing key (.pem) (can be repeated)")
+	verifyCmd.PersistentFlags().StringSliceVar(&OptEncKeys, "enckey",
+		nil, "Private encryption key (.der) (can be repeated)")
+	verifyCmd.PersistentFlags().StringVar(&OptManifest, "manifest",
+		"", "Manifest file")
+
+	imageCmd.AddCommand(verifyCmd)
 }

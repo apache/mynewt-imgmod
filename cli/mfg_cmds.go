@@ -24,16 +24,17 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"sort"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/apache/mynewt-artifact/flash"
+	"github.com/apache/mynewt-artifact/manifest"
+	"github.com/apache/mynewt-artifact/mfg"
+	"github.com/apache/mynewt-artifact/sec"
 	"mynewt.apache.org/imgmod/imfg"
-	"mynewt.apache.org/newt/artifact/flash"
-	"mynewt.apache.org/newt/artifact/manifest"
-	"mynewt.apache.org/newt/artifact/mfg"
-	"mynewt.apache.org/newt/artifact/misc"
-	"mynewt.apache.org/newt/artifact/sec"
 	"mynewt.apache.org/newt/util"
 )
 
@@ -51,6 +52,37 @@ func readMfgBin(filename string) ([]byte, error) {
 
 func readManifest(mfgDir string) (manifest.MfgManifest, error) {
 	return manifest.ReadMfgManifest(mfgDir + "/" + mfg.MANIFEST_FILENAME)
+}
+
+func readMfgDir(mfgDir string) (mfg.Mfg, manifest.MfgManifest, error) {
+	man, err := readManifest(mfgDir)
+	if err != nil {
+		return mfg.Mfg{}, manifest.MfgManifest{}, err
+	}
+
+	binPath := fmt.Sprintf("%s/%s", mfgDir, man.BinPath)
+	bin, err := readMfgBin(binPath)
+	if err != nil {
+		return mfg.Mfg{}, manifest.MfgManifest{}, errors.Wrapf(err,
+			"failed to read \"%s\"", binPath)
+	}
+
+	metaOff := -1
+	if man.Meta != nil {
+		metaOff = man.Meta.EndOffset
+	}
+	m, err := mfg.Parse(bin, metaOff, man.EraseVal)
+	if err != nil {
+		return mfg.Mfg{}, manifest.MfgManifest{}, err
+	}
+
+	return m, man, nil
+}
+
+func mfgTlvStr(tlv mfg.MetaTlv) string {
+	return fmt.Sprintf("%s,0x%02x",
+		mfg.MetaTlvTypeName(tlv.Header.Type),
+		tlv.Header.Type)
 }
 
 func extractFlashAreas(mman manifest.MfgManifest) ([]flash.FlashArea, error) {
@@ -138,24 +170,22 @@ func runSplitCmd(cmd *cobra.Command, args []string) {
 	mfgDir := args[0]
 	outDir := args[1]
 
-	mm, err := readManifest(mfgDir)
+	m, man, err := readMfgDir(mfgDir)
 	if err != nil {
 		ImgmodUsage(cmd, err)
 	}
 
-	areas, err := extractFlashAreas(mm)
+	bin, err := m.Bytes(man.EraseVal)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
 
-	binPath := fmt.Sprintf("%s/%s", mfgDir, mm.BinPath)
-	bin, err := readMfgBin(binPath)
+	areas, err := extractFlashAreas(man)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Failed to read \"%s\": %s", binPath, err.Error()))
+		ImgmodUsage(nil, err)
 	}
 
-	nbmap, err := imfg.Split(bin, mm.Device, areas, 0xff)
+	nbmap, err := imfg.Split(bin, man.Device, areas, man.EraseVal)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
@@ -204,12 +234,12 @@ func runJoinCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(nil, err)
 	}
 
-	bin, err := imfg.Join(nbmap, 0xff, areas)
+	bin, err := imfg.Join(nbmap, mm.EraseVal, areas)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
 
-	m, err := mfg.Parse(bin, mm.Meta.EndOffset, 0xff)
+	m, err := mfg.Parse(bin, mm.Meta.EndOffset, mm.EraseVal)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
@@ -234,7 +264,7 @@ func runJoinCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	finalBin, err := m.Bytes(0xff)
+	finalBin, err := m.Bytes(mm.EraseVal)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
@@ -311,32 +341,18 @@ func runMfgHashableCmd(cmd *cobra.Command, args []string) {
 	mfgDir := args[0]
 	outFilename := OptOutFilename
 
-	// Read manifest and mfgimg.bin.
-	mman, err := readManifest(mfgDir)
+	m, man, err := readMfgDir(mfgDir)
 	if err != nil {
 		ImgmodUsage(cmd, err)
 	}
 
-	binPath := fmt.Sprintf("%s/%s", mfgDir, mman.BinPath)
-	bin, err := readMfgBin(binPath)
-	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Failed to read \"%s\": %s", binPath, err.Error()))
-	}
-
-	metaOff := -1
-	if mman.Meta != nil {
-		metaOff = mman.Meta.EndOffset
-	}
-	m, err := mfg.Parse(bin, metaOff, 0xff)
-	if err != nil {
-		ImgmodUsage(nil, err)
-	}
 	// Zero-out hash so that the hash can be recalculated.
-	m.Meta.ClearHash()
+	if m.Meta != nil {
+		m.Meta.ClearHash()
+	}
 
 	// Write hashable content to disk.
-	newBin, err := m.Bytes(0xff)
+	newBin, err := m.Bytes(man.EraseVal)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
@@ -357,48 +373,30 @@ func runRehashCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(cmd, err)
 	}
 
-	// Read manifest and mfgimg.bin.
-	mman, err := readManifest(mfgDir)
+	m, man, err := readMfgDir(mfgDir)
 	if err != nil {
 		ImgmodUsage(cmd, err)
 	}
 
-	binPath := fmt.Sprintf("%s/%s", mfgDir, mman.BinPath)
-	bin, err := readMfgBin(binPath)
-	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Failed to read \"%s\": %s", binPath, err.Error()))
-	}
-
-	// Calculate accurate hash.
-	metaOff := -1
-	if mman.Meta != nil {
-		metaOff = mman.Meta.EndOffset
-	}
-	m, err := mfg.Parse(bin, metaOff, 0xff)
-	if err != nil {
+	if err := m.RefillHash(man.EraseVal); err != nil {
 		ImgmodUsage(nil, err)
 	}
 
-	if err := m.RecalcHash(0xff); err != nil {
-		ImgmodUsage(nil, err)
-	}
-
-	hash, err := m.Hash()
+	hash, err := m.Hash(man.EraseVal)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
 
 	// Update manifest.
-	mman.MfgHash = misc.HashString(hash)
+	man.MfgHash = hex.EncodeToString(hash)
 
 	// Write new artifacts.
 	if err := EnsureOutDir(mfgDir, outDir); err != nil {
 		ImgmodUsage(nil, err)
 	}
-	binPath = fmt.Sprintf("%s/%s", outDir, mman.BinPath)
+	binPath := fmt.Sprintf("%s/%s", outDir, man.BinPath)
 
-	newBin, err := m.Bytes(0xff)
+	newBin, err := m.Bytes(man.EraseVal)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
@@ -406,7 +404,7 @@ func runRehashCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(nil, err)
 	}
 
-	json, err := mman.MarshalJson()
+	json, err := man.MarshalJson()
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
@@ -515,6 +513,143 @@ func runAddsigMfgCmd(cmd *cobra.Command, args []string) {
 	}
 }
 
+func runRmtlvsMfgCmd(cmd *cobra.Command, args []string) {
+	if len(args) < 2 {
+		ImgmodUsage(cmd, nil)
+	}
+
+	mfgDir := args[0]
+
+	outFilename, err := CalcOutFilename(
+		mfgDir + "/" + mfg.MFG_BIN_IMG_FILENAME)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	m, man, err := readMfgDir(mfgDir)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	numTlvs := 0
+	if m.Meta != nil {
+		numTlvs = len(m.Meta.Tlvs)
+	}
+
+	tlvIndices := []int{}
+	idxMap := map[int]struct{}{}
+	for _, arg := range args[1:] {
+		idx, err := util.AtoiNoOct(arg)
+		if err != nil {
+			ImgmodUsage(cmd, util.FmtNewtError("Invalid TLV index: %s", arg))
+		}
+
+		if idx < 0 || idx >= numTlvs {
+			ImgmodUsage(nil, util.FmtNewtError(
+				"TLV index %s out of range; "+
+					"must be in range [0, %d] for this mfgimage",
+				arg, numTlvs-1))
+		}
+
+		if _, ok := idxMap[idx]; ok {
+			ImgmodUsage(nil, util.FmtNewtError(
+				"TLV index %d specified more than once", idx))
+		}
+		idxMap[idx] = struct{}{}
+
+		tlvIndices = append(tlvIndices, idx)
+	}
+
+	// Remove TLVs in reverse order to preserve index mapping.
+	sort.Sort(sort.Reverse(sort.IntSlice(tlvIndices)))
+	for _, idx := range tlvIndices {
+		tlv := m.Meta.Tlvs[idx]
+		util.StatusMessage(util.VERBOSITY_DEFAULT,
+			"Removing TLV%d: %s\n", idx, mfgTlvStr(tlv))
+
+		tlvSz := mfg.META_TLV_HEADER_SZ + len(tlv.Data)
+		m.MetaOff += tlvSz
+		m.Meta.Footer.Size -= uint16(tlvSz)
+
+		m.Meta.Tlvs = append(m.Meta.Tlvs[0:idx], m.Meta.Tlvs[idx+1:]...)
+	}
+
+	// Rehash.
+	if err := m.RefillHash(man.EraseVal); err != nil {
+		ImgmodUsage(nil, err)
+	}
+
+	// Write new artifacts.
+	newBin, err := m.Bytes(man.EraseVal)
+	if err != nil {
+		ImgmodUsage(nil, err)
+	}
+	if err := WriteFile(newBin, outFilename); err != nil {
+		ImgmodUsage(nil, err)
+	}
+}
+
+func runVerifyMfgCmd(cmd *cobra.Command, args []string) {
+	anyFails := false
+
+	if len(args) < 1 {
+		ImgmodUsage(cmd, nil)
+	}
+
+	mfgDir := args[0]
+
+	// Read mfgimg.bin and manifest.
+	m, man, err := readMfgDir(mfgDir)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	st := ""
+	if err := m.VerifyStructure(man.EraseVal); err != nil {
+		st = fmt.Sprintf("BAD (%s)", err.Error())
+		anyFails = true
+	} else {
+		st = "good"
+	}
+
+	ma := ""
+	if err := m.VerifyManifest(man); err != nil {
+		ma = fmt.Sprintf("BAD (%s)", err.Error())
+		anyFails = true
+	} else {
+		ma = "good"
+	}
+
+	iss, err := sec.ReadPubSignKeys(OptSignKeys)
+	if err != nil {
+		ImgmodUsage(nil, errors.Wrapf(err,
+			"error reading signing key file"))
+	}
+
+	si := ""
+	if len(man.Signatures) == 0 {
+		si = "n/a"
+	} else if len(iss) == 0 {
+		si = "not checked"
+	} else {
+		idx, err := mfg.VerifySigs(man, iss)
+		if err != nil {
+			si = fmt.Sprintf("BAD (%s)", err.Error())
+			anyFails = true
+		} else {
+			si = fmt.Sprintf("good (%s)", OptSignKeys[idx])
+		}
+	}
+
+	fmt.Printf(" structure: %s\n", st)
+	fmt.Printf("signatures: %s\n", si)
+	fmt.Printf("  manifest: %s\n", ma)
+
+	if anyFails {
+		os.Exit(94) // EBADMSG
+	}
+}
+
 func AddMfgCommands(cmd *cobra.Command) {
 	mfgCmd := &cobra.Command{
 		Use:   "mfg",
@@ -620,4 +755,28 @@ func AddMfgCommands(cmd *cobra.Command) {
 		"Replace input files")
 
 	mfgCmd.AddCommand(addsigCmd)
+
+	rmtlvsCmd := &cobra.Command{
+		Use:   "rmtlvs <mfgimage-dir> <tlv-index> [tlv-index] [...]",
+		Short: "Removes the specified TLVs from a Mynewt mfgimage",
+		Run:   runRmtlvsMfgCmd,
+	}
+
+	rmtlvsCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o", "",
+		"File to write to")
+	rmtlvsCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
+		"Replace input file")
+
+	mfgCmd.AddCommand(rmtlvsCmd)
+
+	verifyCmd := &cobra.Command{
+		Use:   "verify <mfgimage-dir>",
+		Short: "Verifies an Mynewt mfgimage's integrity",
+		Run:   runVerifyMfgCmd,
+	}
+
+	verifyCmd.PersistentFlags().StringSliceVar(&OptSignKeys, "signkey",
+		nil, "Public signing key (.pem) (can be repeated)")
+
+	mfgCmd.AddCommand(verifyCmd)
 }

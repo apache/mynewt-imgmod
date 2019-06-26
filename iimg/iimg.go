@@ -24,8 +24,9 @@ import (
 	"fmt"
 	"strings"
 
-	"mynewt.apache.org/newt/artifact/image"
-	"mynewt.apache.org/newt/artifact/sec"
+	"github.com/apache/mynewt-artifact/errors"
+	"github.com/apache/mynewt-artifact/image"
+	"github.com/apache/mynewt-artifact/sec"
 	"mynewt.apache.org/newt/util"
 )
 
@@ -84,7 +85,7 @@ func DetectInvalidSigTlvs(img image.Image) error {
 
 func VerifyImage(img image.Image) error {
 	if len(img.Tlvs) == 0 || img.Tlvs[0].Header.Type != image.IMAGE_TLV_SHA256 {
-		return util.FmtNewtError("First TLV must be SHA256")
+		return errors.Errorf("First TLV must be SHA256")
 	}
 
 	if err := DetectInvalidSigTlvs(img); err != nil {
@@ -128,33 +129,6 @@ func ExtractSecret(img *image.Image) ([]byte, error) {
 	return tlvs[0].Data, nil
 }
 
-// XXX: Only RSA supported for now.
-func DecryptImage(img image.Image, privKeBytes []byte) (image.Image, error) {
-	cipherSecret, err := ExtractSecret(&img)
-	if err != nil {
-		return img, err
-	}
-
-	privKe, err := sec.ParsePrivKeDer(privKeBytes)
-	if err != nil {
-		return img, err
-	}
-
-	plainSecret, err := sec.DecryptSecretRsa(privKe, cipherSecret)
-	if err != nil {
-		return img, err
-	}
-
-	body, err := sec.EncryptAES(img.Body, plainSecret)
-	if err != nil {
-		return img, err
-	}
-
-	img.Body = body
-
-	return img, nil
-}
-
 func recalcHash(img image.Image) (image.Image, error) {
 	hash, err := img.CalcHash()
 	if err != nil {
@@ -162,16 +136,30 @@ func recalcHash(img image.Image) (image.Image, error) {
 	}
 
 	img.RemoveTlvsWithType(image.IMAGE_TLV_SHA256)
-	img.Tlvs = append(img.Tlvs, image.ImageTlv{
+
+	tlv := image.ImageTlv{
 		Header: image.ImageTlvHdr{
 			Type: image.IMAGE_TLV_SHA256,
 			Pad:  0,
 			Len:  uint16(len(hash)),
 		},
 		Data: hash,
-	})
+	}
+
+	// The SHA256 TLV must come first.
+	img.Tlvs = append([]image.ImageTlv{tlv}, img.Tlvs...)
 
 	return img, nil
+}
+
+// XXX: Only RSA supported for now.
+func DecryptImage(img image.Image, privKeBytes []byte) (image.Image, error) {
+	key, err := sec.ParsePrivEncKey(privKeBytes)
+	if err != nil {
+		return img, err
+	}
+
+	return image.Decrypt(img, key)
 }
 
 func DecryptImageFull(img image.Image,
@@ -195,54 +183,27 @@ func DecryptImageFull(img image.Image,
 }
 
 func EncryptImage(img image.Image, pubKeBytes []byte) (image.Image, error) {
-	tlvp, err := img.FindUniqueTlv(image.IMAGE_TLV_ENC_RSA)
-	if err != nil {
-		return img, err
-	}
-	if tlvp != nil {
-		return img, util.FmtNewtError("Image already contains an ENC_RSA TLV")
-	}
-
-	plainSecret, err := image.GeneratePlainSecret()
+	key, err := sec.ParsePubEncKey(pubKeBytes)
 	if err != nil {
 		return img, err
 	}
 
-	cipherSecret, err := image.GenerateCipherSecret(pubKeBytes, plainSecret)
-	if err != nil {
-		return img, err
-	}
-
-	body, err := sec.EncryptAES(img.Body, plainSecret)
-	if err != nil {
-		return img, err
-	}
-	img.Body = body
-
-	tlv, err := image.GenerateEncTlv(cipherSecret)
-	if err != nil {
-		return img, err
-	}
-	img.Tlvs = append(img.Tlvs, tlv)
-
-	img.Header.Flags |= image.IMAGE_F_ENCRYPTED
-
-	return img, nil
+	return image.Encrypt(img, key)
 }
 
 func EncryptImageFull(img image.Image,
 	pubKeBytes []byte) (image.Image, error) {
 
+	img.Header.Flags |= image.IMAGE_F_ENCRYPTED
+
+	// The hash needs to be recalculated now that the header has changed.
 	var err error
-	img, err = EncryptImage(img, pubKeBytes)
+	img, err = recalcHash(img)
 	if err != nil {
 		return img, err
 	}
 
-	img.Header.Flags |= image.IMAGE_F_ENCRYPTED
-
-	// The hash needs to be recalculated now that the header has changed.
-	img, err = recalcHash(img)
+	img, err = EncryptImage(img, pubKeBytes)
 	if err != nil {
 		return img, err
 	}
