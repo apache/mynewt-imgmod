@@ -26,8 +26,8 @@ import (
 	"sort"
 	"strings"
 
-	"mynewt.apache.org/newt/artifact/flash"
-	"mynewt.apache.org/newt/artifact/mfg"
+	"github.com/apache/mynewt-artifact/flash"
+	"github.com/apache/mynewt-artifact/mfg"
 	"mynewt.apache.org/newt/util"
 )
 

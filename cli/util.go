@@ -32,12 +32,14 @@ import (
 
 var OptOutFilename string
 var OptInPlace bool
+var OptSignKeys []string
+var OptEncKeys []string
+var OptManifest string
 
 func ImgmodUsage(cmd *cobra.Command, err error) {
 	if err != nil {
-		sErr := err.(*util.NewtError)
-		log.Debugf("%s", sErr.StackTrace)
-		fmt.Fprintf(os.Stderr, "Error: %s\n", sErr.Text)
+		log.Debugf("%+v", err)
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 	}
 
 	if cmd != nil {
