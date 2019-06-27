@@ -25,16 +25,17 @@ import (
 	"io/ioutil"
 	"os"
 	"sort"
+	"strconv"
 
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/apache/mynewt-artifact/errors"
 	"github.com/apache/mynewt-artifact/image"
 	"github.com/apache/mynewt-artifact/manifest"
 	"github.com/apache/mynewt-artifact/sec"
 	"mynewt.apache.org/imgmod/iimg"
-	"mynewt.apache.org/newt/util"
+	"mynewt.apache.org/imgmod/iutil"
 )
 
 func tlvStr(tlv image.ImageTlv) string {
@@ -62,21 +63,21 @@ func writeImage(img image.Image, filename string) error {
 		return err
 	}
 
-	util.StatusMessage(util.VERBOSITY_DEFAULT, "Wrote image %s\n", filename)
+	iutil.Printf("Wrote image %s\n", filename)
 	return nil
 }
 
 func parseTlvArgs(typeArg string, filenameArg string) (image.ImageTlv, error) {
-	tlvType, err := util.AtoiNoOct(typeArg)
+	tlvType, err := strconv.Atoi(typeArg)
 	if err != nil || tlvType < 0 {
-		return image.ImageTlv{}, util.FmtNewtError(
-			"Invalid TLV type integer: %s", typeArg)
+		return image.ImageTlv{}, errors.Errorf(
+			"invalid TLV type integer: %s", typeArg)
 	}
 
 	data, err := ioutil.ReadFile(filenameArg)
 	if err != nil {
-		return image.ImageTlv{}, util.FmtNewtError(
-			"Error reading TLV data file: %s", err.Error())
+		return image.ImageTlv{}, errors.Wrapf(err,
+			"error reading TLV data file")
 	}
 
 	return image.ImageTlv{
@@ -103,7 +104,7 @@ func runShowCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
-	fmt.Printf("%s\n", s)
+	iutil.Printf("%s\n", s)
 }
 
 func runBriefCmd(cmd *cobra.Command, args []string) {
@@ -121,15 +122,15 @@ func runBriefCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(nil, err)
 	}
 
-	fmt.Printf("%8d| Header\n", offsets.Header)
-	fmt.Printf("%8d| Body\n", offsets.Body)
-	fmt.Printf("%8d| Trailer\n", offsets.Trailer)
+	iutil.Printf("%8d| Header\n", offsets.Header)
+	iutil.Printf("%8d| Body\n", offsets.Body)
+	iutil.Printf("%8d| Trailer\n", offsets.Trailer)
 	for i, tlv := range img.Tlvs {
-		fmt.Printf("%8d| TLV%d: type=%s(%d)\n",
+		iutil.Printf("%8d| TLV%d: type=%s(%d)\n",
 			offsets.Tlvs[i], i, image.ImageTlvTypeName(tlv.Header.Type),
 			tlv.Header.Type)
 	}
-	fmt.Printf("Total=%d\n", offsets.TotalSize)
+	iutil.Printf("Total=%d\n", offsets.TotalSize)
 }
 
 func runSignCmd(cmd *cobra.Command, args []string) {
@@ -155,8 +156,8 @@ func runSignCmd(cmd *cobra.Command, args []string) {
 
 	hash, err := img.Hash()
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Failed to read hash from specified image: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err,
+			"failed to read hash from specified image"))
 	}
 
 	tlvs, err := image.BuildSigTlvs(keys, hash)
@@ -189,8 +190,8 @@ func runAddTlvsCmd(cmd *cobra.Command, args []string) {
 
 	tlvArgs := args[1:]
 	if len(tlvArgs)%2 != 0 {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Invalid argument count; each TLV requires two arguments"))
+		ImgmodUsage(cmd, errors.Errorf(
+			"invalid argument count; each TLV requires two arguments"))
 	}
 
 	tlvs := []image.ImageTlv{}
@@ -229,20 +230,20 @@ func runRmtlvsCmd(cmd *cobra.Command, args []string) {
 	tlvIndices := []int{}
 	idxMap := map[int]struct{}{}
 	for _, arg := range args[1:] {
-		idx, err := util.AtoiNoOct(arg)
+		idx, err := strconv.Atoi(arg)
 		if err != nil {
-			ImgmodUsage(cmd, util.FmtNewtError("Invalid TLV index: %s", arg))
+			ImgmodUsage(cmd, errors.Errorf("invalid TLV index: %s", arg))
 		}
 
 		if idx < 0 || idx >= len(img.Tlvs) {
-			ImgmodUsage(nil, util.FmtNewtError(
+			ImgmodUsage(nil, errors.Errorf(
 				"TLV index %s out of range; "+
 					"must be in range [0, %d] for this image",
 				arg, len(img.Tlvs)-1))
 		}
 
 		if _, ok := idxMap[idx]; ok {
-			ImgmodUsage(nil, util.FmtNewtError(
+			ImgmodUsage(nil, errors.Errorf(
 				"TLV index %d specified more than once", idx))
 		}
 		idxMap[idx] = struct{}{}
@@ -254,8 +255,7 @@ func runRmtlvsCmd(cmd *cobra.Command, args []string) {
 	sort.Sort(sort.Reverse(sort.IntSlice(tlvIndices)))
 	for _, idx := range tlvIndices {
 		tlv := img.Tlvs[idx]
-		util.StatusMessage(util.VERBOSITY_DEFAULT,
-			"Removing TLV%d: %s\n", idx, tlvStr(tlv))
+		iutil.Printf("Removing TLV%d: %s\n", idx, tlvStr(tlv))
 
 		img.Tlvs = append(img.Tlvs[0:idx], img.Tlvs[idx+1:]...)
 	}
@@ -301,7 +301,7 @@ func runHashableCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if OptOutFilename == "" {
-		ImgmodUsage(cmd, util.FmtNewtError("--outfile (-o) option required"))
+		ImgmodUsage(cmd, errors.Errorf("--outfile (-o) option required"))
 	}
 
 	inFilename := args[0]
@@ -313,28 +313,25 @@ func runHashableCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if (img.Header.Flags & image.IMAGE_F_ENCRYPTED) != 0 {
-		util.StatusMessage(util.VERBOSITY_QUIET,
+		fmt.Fprintf(os.Stderr,
 			"* Warning: extracting hashable content from an encrypted image\n")
 	}
 
 	f, err := os.Create(outFilename)
 	if err != nil {
-		ImgmodUsage(nil, util.ChildNewtError(err))
+		ImgmodUsage(nil, errors.Wrapf(err, "failed to create hashable output"))
 	}
 	defer f.Close()
 
 	if err := binary.Write(f, binary.LittleEndian, &img.Header); err != nil {
-		ImgmodUsage(nil, util.FmtNewtError(
-			"Error writing image header: %s", err.Error()))
+		ImgmodUsage(nil, errors.Wrapf(err, "error writing image header"))
 	}
 	_, err = f.Write(img.Body)
 	if err != nil {
-		ImgmodUsage(nil, util.FmtNewtError(
-			"Error writing image body: %s", err.Error()))
+		ImgmodUsage(nil, errors.Wrapf(err, "error writing image body"))
 	}
 
-	util.StatusMessage(util.VERBOSITY_DEFAULT,
-		"Wrote hashable content to %s\n", outFilename)
+	iutil.Printf("Wrote hashable content to %s\n", outFilename)
 }
 
 func runAddsigCmd(cmd *cobra.Command, args []string) {
@@ -346,12 +343,11 @@ func runAddsigCmd(cmd *cobra.Command, args []string) {
 	keyFilename := args[1]
 	sigFilename := args[2]
 
-	sigType, err := util.AtoiNoOct(args[3])
+	sigType, err := strconv.Atoi(args[3])
 	if err != nil || sigType < 0 || sigType > 255 ||
 		!image.ImageTlvTypeIsSig(uint8(sigType)) {
 
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Invalid signature type: %s", args[3]))
+		ImgmodUsage(cmd, errors.Errorf("invalid signature type: %s", args[3]))
 	}
 
 	outFilename, err := CalcOutFilename(imgFilename)
@@ -366,14 +362,12 @@ func runAddsigCmd(cmd *cobra.Command, args []string) {
 
 	keyData, err := ioutil.ReadFile(keyFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Error reading key file: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "error reading key file"))
 	}
 
 	sigData, err := ioutil.ReadFile(sigFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Error reading signature file: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "error reading signature file"))
 	}
 
 	// ECDSA256 signatures need to be padded out to >=72 bytes.
@@ -386,8 +380,7 @@ func runAddsigCmd(cmd *cobra.Command, args []string) {
 
 	// Build and append key hash TLV.
 	keyHashTlv := image.BuildKeyHashTlv(keyData)
-	util.StatusMessage(util.VERBOSITY_DEFAULT, "Adding TLV%d (%s)\n",
-		len(img.Tlvs), tlvStr(keyHashTlv))
+	iutil.Printf("Adding TLV%d (%s)\n", len(img.Tlvs), tlvStr(keyHashTlv))
 	img.Tlvs = append(img.Tlvs, keyHashTlv)
 
 	// Build and append signature TLV.
@@ -398,8 +391,7 @@ func runAddsigCmd(cmd *cobra.Command, args []string) {
 		},
 		Data: sigData,
 	}
-	util.StatusMessage(util.VERBOSITY_DEFAULT, "Adding TLV%d (%s)\n",
-		len(img.Tlvs), tlvStr(sigTlv))
+	iutil.Printf("Adding TLV%d (%s)\n", len(img.Tlvs), tlvStr(sigTlv))
 	img.Tlvs = append(img.Tlvs, sigTlv)
 
 	if err := writeImage(img, outFilename); err != nil {
@@ -427,8 +419,7 @@ func runDecryptCmd(cmd *cobra.Command, args []string) {
 
 	keyBytes, err := ioutil.ReadFile(keyFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Error reading key file: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "error reading key file"))
 	}
 
 	img, err = iimg.DecryptImage(img, keyBytes)
@@ -461,8 +452,7 @@ func runDecryptFullCmd(cmd *cobra.Command, args []string) {
 
 	keyBytes, err := ioutil.ReadFile(keyFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Error reading key file: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "error reading key file"))
 	}
 
 	img, err = iimg.DecryptImageFull(img, keyBytes)
@@ -494,8 +484,7 @@ func runEncryptCmd(cmd *cobra.Command, args []string) {
 
 	keyBytes, err := ioutil.ReadFile(keyFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Error reading key file: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "error reading key file"))
 	}
 
 	img, err = iimg.EncryptImage(img, keyBytes)
@@ -528,8 +517,7 @@ func runEncryptFullCmd(cmd *cobra.Command, args []string) {
 
 	keyBytes, err := ioutil.ReadFile(keyFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Error reading key file: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "error reading key file"))
 	}
 
 	img, err = iimg.EncryptImageFull(img, keyBytes)
@@ -588,8 +576,7 @@ func runVerifyCmd(cmd *cobra.Command, args []string) {
 
 	iss, err := sec.ReadPubSignKeys(OptSignKeys)
 	if err != nil {
-		ImgmodUsage(nil, errors.Wrapf(err,
-			"error reading signing key file"))
+		ImgmodUsage(nil, errors.Wrapf(err, "error reading signing key file"))
 	}
 
 	sigs, err := img.CollectSigs()
@@ -627,10 +614,10 @@ func runVerifyCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	fmt.Printf(" structure: %s\n", st)
-	fmt.Printf("      hash: %s\n", ha)
-	fmt.Printf("signatures: %s\n", si)
-	fmt.Printf("  manifest: %s\n", ma)
+	iutil.Printf(" structure: %s\n", st)
+	iutil.Printf("      hash: %s\n", ha)
+	iutil.Printf("signatures: %s\n", si)
+	iutil.Printf("  manifest: %s\n", ma)
 
 	if anyFails {
 		os.Exit(94) // EBADMSG

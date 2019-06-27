@@ -20,19 +20,14 @@
 package main
 
 import (
-	"fmt"
-
+	"github.com/apache/mynewt-artifact/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"mynewt.apache.org/imgmod/cli"
-	"mynewt.apache.org/newt/util"
+	"mynewt.apache.org/imgmod/iutil"
 )
 
-var ImgmodLogLevel log.Level
-var imgmodSilent bool
-var imgmodQuiet bool
-var imgmodVerbose bool
 var imgmodVersion = "0.0.2"
 
 func main() {
@@ -46,24 +41,11 @@ func main() {
 		Long:    imgmodHelpText,
 		Example: imgmodHelpEx,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			verbosity := util.VERBOSITY_DEFAULT
-			if imgmodSilent {
-				verbosity = util.VERBOSITY_SILENT
-			} else if imgmodQuiet {
-				verbosity = util.VERBOSITY_QUIET
-			} else if imgmodVerbose {
-				verbosity = util.VERBOSITY_VERBOSE
-			}
-
 			logLevel, err := log.ParseLevel(logLevelStr)
 			if err != nil {
-				cli.ImgmodUsage(nil, util.ChildNewtError(err))
+				cli.ImgmodUsage(nil, errors.Wrapf(err, "failed to parse log level"))
 			}
-			ImgmodLogLevel = logLevel
-
-			if err := util.Init(ImgmodLogLevel, "", verbosity); err != nil {
-				cli.ImgmodUsage(nil, err)
-			}
+			log.SetLevel(logLevel)
 		},
 
 		Run: func(cmd *cobra.Command, args []string) {
@@ -71,12 +53,10 @@ func main() {
 		},
 	}
 
-	imgmodCmd.PersistentFlags().BoolVarP(&imgmodVerbose, "verbose", "v", false,
+	imgmodCmd.PersistentFlags().BoolVarP(&iutil.Verbose, "verbose", "v", false,
 		"Enable verbose output when executing commands")
-	imgmodCmd.PersistentFlags().BoolVarP(&imgmodQuiet, "quiet", "q", false,
+	imgmodCmd.PersistentFlags().BoolVarP(&iutil.Quiet, "quiet", "q", false,
 		"Be quiet; only display error output")
-	imgmodCmd.PersistentFlags().BoolVarP(&imgmodSilent, "silent", "s", false,
-		"Be silent; don't output anything")
 	imgmodCmd.PersistentFlags().StringVarP(&logLevelStr, "loglevel", "l",
 		"WARN", "Log level")
 
@@ -88,7 +68,7 @@ func main() {
 		Long:    versHelpText,
 		Example: versHelpEx,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("%s\n", imgmodVersion)
+			iutil.Printf("%s\n", imgmodVersion)
 		},
 	}
 	imgmodCmd.AddCommand(versCmd)

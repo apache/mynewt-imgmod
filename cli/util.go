@@ -24,10 +24,11 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/apache/mynewt-artifact/errors"
+	"github.com/otiai10/copy"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-
-	"mynewt.apache.org/newt/util"
+	"mynewt.apache.org/imgmod/iutil"
 )
 
 var OptOutFilename string
@@ -43,7 +44,7 @@ func ImgmodUsage(cmd *cobra.Command, err error) {
 	}
 
 	if cmd != nil {
-		fmt.Printf("%s - ", cmd.Name())
+		fmt.Fprintf(os.Stderr, "%s - ", cmd.Name())
 		cmd.Help()
 	}
 	os.Exit(1)
@@ -52,7 +53,7 @@ func ImgmodUsage(cmd *cobra.Command, err error) {
 func CalcOutFilename(inFilename string) (string, error) {
 	if OptOutFilename != "" {
 		if OptInPlace {
-			return "", util.FmtNewtError(
+			return "", errors.Errorf(
 				"Only one of --outfile (-o) or --inplace (-i) options allowed")
 		}
 
@@ -60,7 +61,7 @@ func CalcOutFilename(inFilename string) (string, error) {
 	}
 
 	if !OptInPlace {
-		return "", util.FmtNewtError(
+		return "", errors.Errorf(
 			"--outfile (-o) or --inplace (-i) option required")
 	}
 
@@ -68,14 +69,12 @@ func CalcOutFilename(inFilename string) (string, error) {
 }
 
 func CopyDir(src string, dst string) error {
-	if err := util.CopyDir(src, dst); err != nil {
-		return util.FmtNewtError(
-			"Failed to copy directory \"%s\" to \"%s\": %s",
-			src, dst, err.Error())
+	if err := copy.Copy(src, dst); err != nil {
+		return errors.Wrapf(err,
+			"failed to copy directory \"%s\" to \"%s\"", src, dst)
 	}
 
-	util.StatusMessage(util.VERBOSITY_DEFAULT,
-		"Copied directory \"%s\" to \"%s\"\n", src, dst)
+	iutil.Printf("Copied directory \"%s\" to \"%s\"\n", src, dst)
 	return nil
 }
 
@@ -91,23 +90,20 @@ func EnsureOutDir(inDir, outDir string) error {
 }
 
 func CopyFile(src string, dst string) error {
-	if err := util.CopyFile(src, dst); err != nil {
-		return util.FmtNewtError(
-			"Failed to copy file \"%s\" to \"%s\": %s",
-			src, dst, err.Error())
+	if err := copy.Copy(src, dst); err != nil {
+		return errors.Wrapf(err,
+			"failed to copy file \"%s\" to \"%s\"", src, dst)
 	}
 
-	util.StatusMessage(util.VERBOSITY_DEFAULT,
-		"Copied file \"%s\" to \"%s\"\n", src, dst)
+	iutil.Printf("Copied file \"%s\" to \"%s\"\n", src, dst)
 	return nil
 }
 
 func WriteFile(data []byte, filename string) error {
 	if err := ioutil.WriteFile(filename, data, os.ModePerm); err != nil {
-		return util.FmtNewtError(
-			"Failed to write file \"%s\": %s", filename, err.Error())
+		return errors.Wrapf(err, "failed to write file \"%s\"")
 	}
 
-	util.StatusMessage(util.VERBOSITY_DEFAULT, "Wrote file \"%s\"\n", filename)
+	iutil.Printf("Wrote file \"%s\"\n", filename)
 	return nil
 }

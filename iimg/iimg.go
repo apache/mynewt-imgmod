@@ -27,7 +27,6 @@ import (
 	"github.com/apache/mynewt-artifact/errors"
 	"github.com/apache/mynewt-artifact/image"
 	"github.com/apache/mynewt-artifact/sec"
-	"mynewt.apache.org/newt/util"
 )
 
 func GetDupSigs(img image.Image) []string {
@@ -77,7 +76,7 @@ func DetectInvalidSigTlvs(img image.Image) error {
 	}
 
 	if len(errStrs) > 0 {
-		return util.FmtNewtError("%s", strings.Join(errStrs, "\n"))
+		return errors.New(strings.Join(errStrs, "\n"))
 	}
 
 	return nil
@@ -98,7 +97,7 @@ func VerifyImage(img image.Image) error {
 			s += fmt.Sprintf("\n    %s", d)
 		}
 
-		return util.FmtNewtError("%s", s)
+		return errors.New(s)
 	}
 
 	return nil
@@ -106,7 +105,7 @@ func VerifyImage(img image.Image) error {
 
 func PadEcdsa256Sig(sig []byte) ([]byte, error) {
 	if len(sig) < 70 {
-		return nil, util.FmtNewtError(
+		return nil, errors.Errorf(
 			"Invalid ECDSA256 signature; length (%d) less than 70", len(sig))
 	}
 
@@ -121,7 +120,7 @@ func PadEcdsa256Sig(sig []byte) ([]byte, error) {
 func ExtractSecret(img *image.Image) ([]byte, error) {
 	tlvs := img.RemoveTlvsWithType(image.IMAGE_TLV_ENC_RSA)
 	if len(tlvs) != 1 {
-		return nil, util.FmtNewtError(
+		return nil, errors.Errorf(
 			"Image contains invalid count of ENC_RSA TLVs: %d; must contain 1",
 			len(tlvs))
 	}
