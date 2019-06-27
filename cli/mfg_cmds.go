@@ -25,6 +25,7 @@ import (
 	"io/ioutil"
 	"os"
 	"sort"
+	"strconv"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -35,7 +36,7 @@ import (
 	"github.com/apache/mynewt-artifact/mfg"
 	"github.com/apache/mynewt-artifact/sec"
 	"mynewt.apache.org/imgmod/imfg"
-	"mynewt.apache.org/newt/util"
+	"mynewt.apache.org/imgmod/iutil"
 )
 
 const MAX_SIG_LEN = 1024 // Bytes.
@@ -43,8 +44,7 @@ const MAX_SIG_LEN = 1024 // Bytes.
 func readMfgBin(filename string) ([]byte, error) {
 	bin, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return nil, util.FmtChildNewtError(err,
-			"Failed to read manufacturing image: %s", err.Error())
+		return nil, errors.Wrapf(err, "failed to read manufacturing image")
 	}
 
 	return bin, nil
@@ -89,13 +89,13 @@ func extractFlashAreas(mman manifest.MfgManifest) ([]flash.FlashArea, error) {
 	areas := flash.SortFlashAreasByDevOff(mman.FlashAreas)
 
 	if len(areas) == 0 {
-		ImgmodUsage(nil, util.FmtNewtError(
+		ImgmodUsage(nil, errors.Errorf(
 			"Boot loader manifest does not contain flash map"))
 	}
 
 	overlaps, conflicts := flash.DetectErrors(areas)
 	if len(overlaps) > 0 || len(conflicts) > 0 {
-		return nil, util.NewNewtError(flash.ErrorText(overlaps, conflicts))
+		return nil, errors.New(flash.ErrorText(overlaps, conflicts))
 	}
 
 	if err := imfg.VerifyAreas(areas); err != nil {
@@ -115,8 +115,8 @@ func createNameBlobMap(binDir string,
 		filename := fmt.Sprintf("%s/%s.bin", binDir, area.Name)
 		bin, err := readMfgBin(filename)
 		if err != nil {
-			if !util.IsNotExist(err) {
-				return nil, util.ChildNewtError(err)
+			if !os.IsNotExist(errors.Cause(err)) {
+				return nil, errors.Wrapf(err, "could not read mfgimage binary")
 			}
 		} else {
 			mm[area.Name] = bin
@@ -132,10 +132,9 @@ func runMfgShowCmd(cmd *cobra.Command, args []string) {
 	}
 	inFilename := args[0]
 
-	metaEndOff, err := util.AtoiNoOct(args[1])
+	metaEndOff, err := strconv.Atoi(args[1])
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"invalid meta offset \"%s\"", args[1]))
+		ImgmodUsage(cmd, errors.Errorf("invalid meta offset \"%s\"", args[1]))
 	}
 
 	bin, err := readMfgBin(inFilename)
@@ -149,16 +148,15 @@ func runMfgShowCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if m.Meta == nil {
-		util.StatusMessage(util.VERBOSITY_DEFAULT,
-			"Manufacturing image %s does not contain an MMR\n", inFilename)
+		iutil.Printf("Manufacturing image %s does not contain an MMR\n",
+			inFilename)
 	} else {
 		s, err := m.Meta.Json(metaEndOff)
 		if err != nil {
 			ImgmodUsage(nil, err)
 		}
-		util.StatusMessage(util.VERBOSITY_DEFAULT,
-			"Manufacturing image %s contains an MMR with "+
-				"the following properties:\n%s\n", inFilename, s)
+		iutil.Printf("Manufacturing image %s contains an MMR with "+
+			"the following properties:\n%s\n", inFilename, s)
 	}
 }
 
@@ -191,7 +189,7 @@ func runSplitCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if err := os.Mkdir(outDir, os.ModePerm); err != nil {
-		ImgmodUsage(nil, util.ChildNewtError(err))
+		ImgmodUsage(nil, errors.Wrapf(err, "failed to make output directory"))
 	}
 
 	for name, data := range nbmap {
@@ -214,11 +212,6 @@ func runJoinCmd(cmd *cobra.Command, args []string) {
 
 	splitDir := args[0]
 	outDir := args[1]
-
-	if util.NodeExist(outDir) {
-		ImgmodUsage(nil, util.FmtNewtError(
-			"Destination \"%s\" already exists", outDir))
-	}
 
 	mm, err := readManifest(splitDir + "/mfg")
 	if err != nil {
@@ -246,8 +239,8 @@ func runJoinCmd(cmd *cobra.Command, args []string) {
 
 	infos, err := ioutil.ReadDir(splitDir + "/mfg")
 	if err != nil {
-		ImgmodUsage(nil, util.FmtNewtError(
-			"Error reading source mfg directory: %s", err.Error()))
+		ImgmodUsage(nil, errors.Wrapf(err,
+			"Error reading source mfg directory: %s"))
 	}
 	for _, info := range infos {
 		if info.Name() != mfg.MFG_BIN_IMG_FILENAME {
@@ -291,20 +284,18 @@ func genSwapKeyCmd(cmd *cobra.Command, args []string, isKek bool) {
 
 	bin, err := readMfgBin(mfgimgFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Failed to read mfgimg file: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err,
+			"failed to read mfgimg file: %s"))
 	}
 
 	okey, err := ioutil.ReadFile(okeyFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Failed to read old key der: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "failed to read old key der: %s"))
 	}
 
 	nkey, err := ioutil.ReadFile(nkeyFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Failed to read new key der: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "failed to read new key der: %s"))
 	}
 
 	if isKek {
@@ -335,7 +326,7 @@ func runMfgHashableCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if OptOutFilename == "" {
-		ImgmodUsage(cmd, util.FmtNewtError("--outfile (-o) option required"))
+		ImgmodUsage(cmd, errors.Errorf("--outfile (-o) option required"))
 	}
 
 	mfgDir := args[0]
@@ -475,18 +466,16 @@ func runAddsigMfgCmd(cmd *cobra.Command, args []string) {
 	// Read public key.
 	keyBytes, err := ioutil.ReadFile(keyFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtNewtError(
-			"Error reading key file: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "error reading key file"))
 	}
 
 	// Read signature.
 	sig, err := ioutil.ReadFile(sigFilename)
 	if err != nil {
-		ImgmodUsage(cmd, util.FmtChildNewtError(err,
-			"Failed to read signature: %s", err.Error()))
+		ImgmodUsage(cmd, errors.Wrapf(err, "failed to read signature"))
 	}
 	if len(sig) > MAX_SIG_LEN {
-		ImgmodUsage(nil, util.FmtNewtError(
+		ImgmodUsage(nil, errors.Errorf(
 			"signature larger than arbitrary maximum length (%d > %d)",
 			len(sig), MAX_SIG_LEN))
 	}
@@ -539,20 +528,20 @@ func runRmtlvsMfgCmd(cmd *cobra.Command, args []string) {
 	tlvIndices := []int{}
 	idxMap := map[int]struct{}{}
 	for _, arg := range args[1:] {
-		idx, err := util.AtoiNoOct(arg)
+		idx, err := strconv.Atoi(arg)
 		if err != nil {
-			ImgmodUsage(cmd, util.FmtNewtError("Invalid TLV index: %s", arg))
+			ImgmodUsage(cmd, errors.Errorf("invalid TLV index: %s", arg))
 		}
 
 		if idx < 0 || idx >= numTlvs {
-			ImgmodUsage(nil, util.FmtNewtError(
+			ImgmodUsage(nil, errors.Errorf(
 				"TLV index %s out of range; "+
 					"must be in range [0, %d] for this mfgimage",
 				arg, numTlvs-1))
 		}
 
 		if _, ok := idxMap[idx]; ok {
-			ImgmodUsage(nil, util.FmtNewtError(
+			ImgmodUsage(nil, errors.Errorf(
 				"TLV index %d specified more than once", idx))
 		}
 		idxMap[idx] = struct{}{}
@@ -564,8 +553,7 @@ func runRmtlvsMfgCmd(cmd *cobra.Command, args []string) {
 	sort.Sort(sort.Reverse(sort.IntSlice(tlvIndices)))
 	for _, idx := range tlvIndices {
 		tlv := m.Meta.Tlvs[idx]
-		util.StatusMessage(util.VERBOSITY_DEFAULT,
-			"Removing TLV%d: %s\n", idx, mfgTlvStr(tlv))
+		iutil.Printf("Removing TLV%d: %s\n", idx, mfgTlvStr(tlv))
 
 		tlvSz := mfg.META_TLV_HEADER_SZ + len(tlv.Data)
 		m.MetaOff += tlvSz
@@ -622,8 +610,7 @@ func runVerifyMfgCmd(cmd *cobra.Command, args []string) {
 
 	iss, err := sec.ReadPubSignKeys(OptSignKeys)
 	if err != nil {
-		ImgmodUsage(nil, errors.Wrapf(err,
-			"error reading signing key file"))
+		ImgmodUsage(nil, errors.Wrapf(err, "error reading signing key file"))
 	}
 
 	si := ""
@@ -641,9 +628,9 @@ func runVerifyMfgCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	fmt.Printf(" structure: %s\n", st)
-	fmt.Printf("signatures: %s\n", si)
-	fmt.Printf("  manifest: %s\n", ma)
+	iutil.Printf(" structure: %s\n", st)
+	iutil.Printf("signatures: %s\n", si)
+	iutil.Printf("  manifest: %s\n", ma)
 
 	if anyFails {
 		os.Exit(94) // EBADMSG

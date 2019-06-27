@@ -26,9 +26,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/apache/mynewt-artifact/errors"
 	"github.com/apache/mynewt-artifact/flash"
 	"github.com/apache/mynewt-artifact/mfg"
-	"mynewt.apache.org/newt/util"
+	"mynewt.apache.org/imgmod/iutil"
 )
 
 type NameBlobMap map[string][]byte
@@ -43,7 +44,7 @@ func errInvalidArea(areaName string, format string,
 	args ...interface{}) error {
 
 	suffix := fmt.Sprintf(format, args...)
-	return util.FmtNewtError("Invalid flash area \"%s\": %s", areaName, suffix)
+	return errors.Errorf("invalid flash area \"%s\": %s", areaName, suffix)
 }
 
 func verifyArea(area flash.FlashArea, minOffset int) error {
@@ -84,7 +85,7 @@ func Split(mfgBin []byte, deviceNum int,
 
 	for _, area := range areas {
 		if _, ok := mm[area.Name]; ok {
-			return nil, util.FmtNewtError(
+			return nil, errors.Errorf(
 				"two or more flash areas with same name: \"%s\"", area.Name)
 		}
 
@@ -136,8 +137,7 @@ func Join(mm NameBlobMap, eraseVal byte,
 			if len(bin) >= 4 {
 				binstr = fmt.Sprintf("%x", bin[:4])
 			}
-			util.StatusMessage(util.VERBOSITY_DEFAULT,
-				"inserting %s (%s) at offset %d (0x%x)\n",
+			iutil.Printf("inserting %s (%s) at offset %d (0x%x)\n",
 				area.Name, binstr, len(joined), len(joined))
 			joined = append(joined, bin...)
 		}
@@ -151,7 +151,7 @@ func Join(mm NameBlobMap, eraseVal byte,
 		}
 		sort.Strings(names)
 
-		return nil, util.FmtNewtError(
+		return nil, errors.Errorf(
 			"unprocessed flash areas: %s", strings.Join(names, ", "))
 	}
 
@@ -163,23 +163,22 @@ func Join(mm NameBlobMap, eraseVal byte,
 
 func replaceKey(mfgBin []byte, okey []byte, nkey []byte) (int, error) {
 	if len(okey) > len(mfgBin) {
-		return 0, util.FmtNewtError(
+		return 0, errors.Errorf(
 			"key longer than flash section (%d > %d)", len(okey), len(mfgBin))
 	}
 
 	idx := bytes.Index(mfgBin, okey)
 	if idx == -1 {
-		return 0, util.FmtNewtError("old key not present in flash section")
+		return 0, errors.Errorf("old key not present in flash section")
 	}
 
 	lastIdx := bytes.LastIndex(mfgBin, okey)
 	if idx != lastIdx {
-		return 0, util.FmtNewtError(
+		return 0, errors.Errorf(
 			"multiple instances of old key in flash section")
 	}
 
-	util.StatusMessage(util.VERBOSITY_VERBOSE,
-		"Replacing key at offset %d\n", idx)
+	iutil.PrintfVerbose("Replacing key at offset %d\n", idx)
 
 	copy(mfgBin[idx:idx+len(okey)], nkey)
 
@@ -188,7 +187,7 @@ func replaceKey(mfgBin []byte, okey []byte, nkey []byte) (int, error) {
 
 func ReplaceIsk(mfgBin []byte, okey []byte, nkey []byte) error {
 	if len(nkey) != len(okey) {
-		return util.FmtNewtError(
+		return errors.Errorf(
 			"key lengths differ (%d != %d)", len(nkey), len(okey))
 	}
 
@@ -201,7 +200,7 @@ func ReplaceIsk(mfgBin []byte, okey []byte, nkey []byte) error {
 
 func ReplaceKek(mfgBin []byte, okey []byte, nkey []byte) error {
 	if len(nkey) > len(okey) {
-		return util.FmtNewtError(
+		return errors.Errorf(
 			"new key longer than old key (%d > %d)", len(nkey), len(okey))
 	}
 
@@ -215,11 +214,11 @@ func ReplaceKek(mfgBin []byte, okey []byte, nkey []byte) error {
 	klIdx := keyIdx - 4
 	buf := bytes.NewBuffer(mfgBin[klIdx : klIdx+4])
 	if err := binary.Read(buf, binary.LittleEndian, &kl); err != nil {
-		return util.ChildNewtError(err)
+		return errors.Wrapf(err, "failed to read key length")
 	}
 
 	if int(kl) != len(okey) {
-		return util.FmtNewtError(
+		return errors.Errorf(
 			"embedded key length (off=%d) has unexpected value; "+
 				"want=%d have=%d",
 			klIdx, len(okey), kl)
@@ -228,7 +227,7 @@ func ReplaceKek(mfgBin []byte, okey []byte, nkey []byte) error {
 	buf = &bytes.Buffer{}
 	kl = uint32(len(nkey))
 	if err := binary.Write(buf, binary.LittleEndian, kl); err != nil {
-		return util.ChildNewtError(err)
+		return errors.Wrapf(err, "failed to write key length")
 	}
 
 	copy(mfgBin[klIdx:klIdx+4], buf.Bytes())
