@@ -26,6 +26,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -577,9 +578,44 @@ func runRmtlvsMfgCmd(cmd *cobra.Command, args []string) {
 	}
 }
 
-func runVerifyMfgCmd(cmd *cobra.Command, args []string) {
-	anyFails := false
+func verifyEmbeddedImages(m mfg.Mfg, man manifest.MfgManifest, iss []sec.PubSignKey, kes []sec.PrivEncKey) (string, bool) {
+	prefix := "    images: "
+	good := true
 
+	imgs, err := m.ExtractImages(man)
+	if err != nil {
+		return prefix + fmt.Sprintf("BAD (%s)", err.Error()), false
+	}
+
+	var results [][]string
+	for _, img := range imgs {
+		st, stgood := verifyImageStructureStr(img)
+		ha, hagood := verifyImageHashStr(img, kes)
+		si, sigood := verifyImageSigsStr(img, iss)
+
+		results = append(results, []string{
+			st, ha, si,
+		})
+
+		if !stgood || !hagood || !sigood {
+			good = false
+		}
+	}
+
+	sub := "\n"
+	for i, r := range results {
+		if i != 0 {
+			sub += "\n"
+		}
+
+		sub += Indent(fmt.Sprintf("%d:\n", i), 12)
+		sub += strings.Join(IndentLines(r, 16), "\n")
+	}
+
+	return prefix + sub, good
+}
+
+func runVerifyMfgCmd(cmd *cobra.Command, args []string) {
 	if len(args) < 1 {
 		ImgmodUsage(cmd, nil)
 	}
@@ -592,47 +628,35 @@ func runVerifyMfgCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(cmd, err)
 	}
 
-	st := ""
-	if err := m.VerifyStructure(man.EraseVal); err != nil {
-		st = fmt.Sprintf("BAD (%s)", err.Error())
-		anyFails = true
-	} else {
-		st = "good"
-	}
-
-	ma := ""
-	if err := m.VerifyManifest(man); err != nil {
-		ma = fmt.Sprintf("BAD (%s)", err.Error())
-		anyFails = true
-	} else {
-		ma = "good"
-	}
-
 	iss, err := sec.ReadPubSignKeys(OptSignKeys)
 	if err != nil {
 		ImgmodUsage(nil, errors.Wrapf(err, "error reading signing key file"))
 	}
 
-	si := ""
-	if len(man.Signatures) == 0 {
-		si = "n/a"
-	} else if len(iss) == 0 {
-		si = "not checked"
-	} else {
-		idx, err := mfg.VerifySigs(man, iss)
-		if err != nil {
-			si = fmt.Sprintf("BAD (%s)", err.Error())
-			anyFails = true
-		} else {
-			si = fmt.Sprintf("good (%s)", OptSignKeys[idx])
-		}
+	kes, err := sec.ReadPrivEncKeys(OptEncKeys)
+	if err != nil {
+		ImgmodUsage(nil, errors.Wrapf(err,
+			"error reading encryption key file"))
 	}
 
-	iutil.Printf(" structure: %s\n", st)
-	iutil.Printf("signatures: %s\n", si)
-	iutil.Printf("  manifest: %s\n", ma)
+	st, stgood := verifyMfgStructureStr(m, man)
+	si, sigood := verifyMfgSigsStr(m, man, iss)
+	ma, magood := verifyMfgManifestStr(m, man)
 
-	if anyFails {
+	im := ""
+	imgood := true
+	if OptVerifyImages {
+		im, imgood = verifyEmbeddedImages(m, man, iss, kes)
+	} else {
+		im = "    images: n/a"
+	}
+
+	iutil.Printf("%s\n", st)
+	iutil.Printf("%s\n", si)
+	iutil.Printf("%s\n", ma)
+	iutil.Printf("%s\n", im)
+
+	if !stgood || !sigood || !magood || !imgood {
 		os.Exit(94) // EBADMSG
 	}
 }
@@ -762,8 +786,12 @@ func AddMfgCommands(cmd *cobra.Command) {
 		Run:   runVerifyMfgCmd,
 	}
 
+	verifyCmd.PersistentFlags().BoolVar(&OptVerifyImages, "images", false,
+		"Verify embedded images")
 	verifyCmd.PersistentFlags().StringSliceVar(&OptSignKeys, "signkey",
 		nil, "Public signing key (.pem) (can be repeated)")
+	verifyCmd.PersistentFlags().StringSliceVar(&OptEncKeys, "enckey",
+		nil, "Private encryption key (.der) (can be repeated)")
 
 	mfgCmd.AddCommand(verifyCmd)
 }

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 
 	"github.com/apache/mynewt-artifact/errors"
 	"github.com/otiai10/copy"
@@ -33,6 +34,7 @@ import (
 
 var OptOutFilename string
 var OptInPlace bool
+var OptVerifyImages bool
 var OptSignKeys []string
 var OptEncKeys []string
 var OptManifest string
@@ -106,4 +108,18 @@ func WriteFile(data []byte, filename string) error {
 
 	iutil.Printf("Wrote file \"%s\"\n", filename)
 	return nil
+}
+
+func Indent(s string, spaceCount int) string {
+	return strings.Repeat(" ", spaceCount) + s
+}
+
+func IndentLines(lines []string, spaceCount int) []string {
+	res := make([]string, len(lines))
+
+	for i, line := range lines {
+		res[i] = Indent(line, spaceCount)
+	}
+
+	return res
 }

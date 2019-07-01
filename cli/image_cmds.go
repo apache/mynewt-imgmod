@@ -531,8 +531,6 @@ func runEncryptFullCmd(cmd *cobra.Command, args []string) {
 }
 
 func runVerifyCmd(cmd *cobra.Command, args []string) {
-	anyFails := false
-
 	if len(args) < 1 {
 		ImgmodUsage(cmd, nil)
 	}
@@ -544,34 +542,10 @@ func runVerifyCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(cmd, err)
 	}
 
-	st := ""
-	if err := img.VerifyStructure(); err != nil {
-		st = fmt.Sprintf("BAD (%s)", err.Error())
-		anyFails = true
-	} else {
-		st = "good"
-	}
-
 	kes, err := sec.ReadPrivEncKeys(OptEncKeys)
 	if err != nil {
 		ImgmodUsage(nil, errors.Wrapf(err,
 			"error reading encryption key file"))
-	}
-
-	ha := ""
-	if img.IsEncrypted() && len(kes) == 0 {
-		ha = "not checked (image encrypted; no keys specified)"
-	} else {
-		keyIdx, err := img.VerifyHash(kes)
-		if err != nil {
-			ha = fmt.Sprintf("BAD (%s)", err.Error())
-			anyFails = true
-		} else {
-			ha = "good"
-			if keyIdx != -1 {
-				ha += fmt.Sprintf(" (%s)", OptEncKeys[keyIdx])
-			}
-		}
 	}
 
 	iss, err := sec.ReadPubSignKeys(OptSignKeys)
@@ -579,47 +553,26 @@ func runVerifyCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(nil, errors.Wrapf(err, "error reading signing key file"))
 	}
 
-	sigs, err := img.CollectSigs()
-	if err != nil {
-		ImgmodUsage(nil, err)
-	}
-
-	si := ""
-	if len(sigs) == 0 {
-		si = "n/a"
-	} else if len(iss) == 0 {
-		si = "not checked"
-	} else {
-		idx, err := img.VerifySigs(iss)
-		if err != nil {
-			si = fmt.Sprintf("BAD (%s)", err.Error())
-			anyFails = true
-		} else {
-			si = fmt.Sprintf("good (%s)", OptSignKeys[idx])
-		}
-	}
-
-	ma := "n/a"
+	var man *manifest.Manifest
 	if OptManifest != "" {
-		man, err := manifest.ReadManifest(OptManifest)
+		mfest, err := manifest.ReadManifest(OptManifest)
 		if err != nil {
 			ImgmodUsage(nil, err)
 		}
-
-		if err := img.VerifyManifest(man); err != nil {
-			ma = fmt.Sprintf("BAD (%s)", err.Error())
-			anyFails = true
-		} else {
-			ma = "good"
-		}
+		man = &mfest
 	}
 
-	iutil.Printf(" structure: %s\n", st)
-	iutil.Printf("      hash: %s\n", ha)
-	iutil.Printf("signatures: %s\n", si)
-	iutil.Printf("  manifest: %s\n", ma)
+	st, stgood := verifyImageStructureStr(img)
+	ha, hagood := verifyImageHashStr(img, kes)
+	si, sigood := verifyImageSigsStr(img, iss)
+	ma, magood := verifyImageManifestStr(img, man)
 
-	if anyFails {
+	iutil.Printf("%s\n", st)
+	iutil.Printf("%s\n", ha)
+	iutil.Printf("%s\n", si)
+	iutil.Printf("%s\n", ma)
+
+	if !stgood || !hagood || !sigood || !magood {
 		os.Exit(94) // EBADMSG
 	}
 }
