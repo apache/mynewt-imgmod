@@ -75,6 +75,7 @@ func main() {
 
 	cli.AddImageCommands(imgmodCmd)
 	cli.AddMfgCommands(imgmodCmd)
+	cli.AddKeyCommands(imgmodCmd)
 
 	imgmodCmd.Execute()
 }
