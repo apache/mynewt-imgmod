@@ -28,6 +28,7 @@ import (
 
 	"github.com/apache/mynewt-artifact/errors"
 	"github.com/apache/mynewt-artifact/flash"
+	"github.com/apache/mynewt-artifact/manifest"
 	"github.com/apache/mynewt-artifact/mfg"
 	"mynewt.apache.org/imgmod/iutil"
 )
@@ -78,8 +79,63 @@ func VerifyAreas(areas []flash.FlashArea) error {
 	return nil
 }
 
-func Split(mfgBin []byte, deviceNum int,
-	areas []flash.FlashArea, eraseVal byte) (NameBlobMap, error) {
+// areaDataEnd calculates the end offset of valid data in a flash area.  "Valid
+// data" includes all target binaries and raw sections.  If it cannot determine
+// the end of any constituent part, it returns an error.
+func areaDataEnd(area flash.FlashArea, man manifest.MfgManifest) (int, error) {
+	end := 0
+
+	// Updates `end` if the specified region extends beyond our current concept
+	// of "the end".
+	checkOne := func(offset int, size int) error {
+		a := man.FindWithinFlashAreaDevOff(man.Device, offset)
+		if a.Id != area.Id {
+			// Data belongs to a different area.
+			return nil
+		}
+
+		// Older manifests do not contain target size information.
+		if size <= 0 {
+			return errors.Errorf(
+				"failed to calculate end offset of data at %d: "+
+					"manifest lacks size",
+				offset)
+		}
+
+		subEnd := offset - a.Offset + size
+		if subEnd > end {
+			end = subEnd
+		}
+
+		return nil
+	}
+
+	for _, t := range man.Targets {
+		err := checkOne(t.Offset, t.Size)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	for _, r := range man.Raws {
+		err := checkOne(r.Offset, r.Size)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	if man.Meta != nil {
+		err := checkOne(man.Meta.EndOffset-1, 1)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return end, nil
+}
+
+func Split(mfgBin []byte, man manifest.MfgManifest,
+	areas []flash.FlashArea) (NameBlobMap, error) {
 
 	mm := NameBlobMap{}
 
@@ -89,7 +145,7 @@ func Split(mfgBin []byte, deviceNum int,
 				"two or more flash areas with same name: \"%s\"", area.Name)
 		}
 
-		if area.Device == deviceNum {
+		if area.Device == man.Device {
 			var areaBin []byte
 			if area.Offset < len(mfgBin) {
 				end := area.Offset + area.Size
@@ -100,7 +156,17 @@ func Split(mfgBin []byte, deviceNum int,
 				areaBin = mfgBin[area.Offset:end]
 			}
 
-			mm[area.Name] = StripPadding(areaBin, eraseVal)
+			dataEnd, err := areaDataEnd(area, man)
+			if err != nil {
+				// Failed to determine the data end offset.  Just strip all
+				// trailing erase-val bytes.
+				areaBin = StripPadding(areaBin, man.EraseVal)
+			} else {
+				areaBin = areaBin[:dataEnd]
+			}
+			if len(areaBin) > 0 {
+				mm[area.Name] = areaBin
+			}
 		}
 	}
 
