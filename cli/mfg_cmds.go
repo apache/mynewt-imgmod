@@ -184,7 +184,7 @@ func runSplitCmd(cmd *cobra.Command, args []string) {
 		ImgmodUsage(nil, err)
 	}
 
-	nbmap, err := imfg.Split(bin, man.Device, areas, man.EraseVal)
+	nbmap, err := imfg.Split(bin, man, areas)
 	if err != nil {
 		ImgmodUsage(nil, err)
 	}
