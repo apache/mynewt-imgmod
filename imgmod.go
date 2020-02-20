@@ -20,15 +20,15 @@
 package main
 
 import (
-	"github.com/apache/mynewt-artifact/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/apache/mynewt-artifact/errors"
+
 	"mynewt.apache.org/imgmod/cli"
 	"mynewt.apache.org/imgmod/iutil"
+	"mynewt.apache.org/imgmod/version"
 )
-
-var imgmodVersion = "0.0.2"
 
 func main() {
 	imgmodHelpText := ""
@@ -68,7 +68,7 @@ func main() {
 		Long:    versHelpText,
 		Example: versHelpEx,
 		Run: func(cmd *cobra.Command, args []string) {
-			iutil.Printf("%s\n", imgmodVersion)
+			iutil.Printf("imgmod %s\n", version.VersionStr())
 		},
 	}
 	imgmodCmd.AddCommand(versCmd)
