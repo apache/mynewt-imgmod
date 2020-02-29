@@ -656,7 +656,7 @@ func AddImageCommands(cmd *cobra.Command) {
 
 	hashableCmd := &cobra.Command{
 		Use:   "hashable <img-file>",
-		Short: "Removes all signatures from a Mynewt image file",
+		Short: "Extracts an image's hashable content",
 		Run:   runHashableCmd,
 	}
 
