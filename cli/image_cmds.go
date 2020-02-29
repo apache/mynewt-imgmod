@@ -674,6 +674,25 @@ func runVerifyCmd(cmd *cobra.Command, args []string) {
 	}
 }
 
+func runExtractBodyCmd(cmd *cobra.Command, args []string) {
+	if len(args) < 1 {
+		ImgmodUsage(cmd, nil)
+	}
+
+	imgFilename := args[0]
+	outFilename := args[1]
+
+	img, err := readImage(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	err = WriteFile(img.Body, outFilename)
+	if err != nil {
+		ImgmodUsage(nil, err)
+	}
+}
+
 func AddImageCommands(cmd *cobra.Command) {
 	imageCmd := &cobra.Command{
 		Use:   "image",
@@ -883,4 +902,12 @@ func AddImageCommands(cmd *cobra.Command) {
 		"", "Manifest file")
 
 	imageCmd.AddCommand(verifyCmd)
+
+	extractBodyCmd := &cobra.Command{
+		Use:   "extractbody <image> <out-file>",
+		Short: "Extracts a Mynewt image's body",
+		Run:   runExtractBodyCmd,
+	}
+
+	imageCmd.AddCommand(extractBodyCmd)
 }
