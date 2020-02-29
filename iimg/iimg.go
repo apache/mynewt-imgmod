@@ -20,6 +20,7 @@
 package iimg
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -179,6 +180,16 @@ func DecryptImageFull(img image.Image,
 	}
 
 	return img, nil
+}
+
+func DecryptImageHw(img image.Image, secretBytes []byte) (image.Image, error) {
+	secret, err := base64.StdEncoding.DecodeString(string(secretBytes))
+	if err != nil {
+		// Not base64 encoded.  Assume this is a raw AES secret.
+		secret = secretBytes
+	}
+
+	return image.DecryptHw(img, secret)
 }
 
 func EncryptImage(img image.Image, pubKeBytes []byte) (image.Image, error) {

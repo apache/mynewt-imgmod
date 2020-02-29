@@ -492,6 +492,39 @@ func runDecryptFullCmd(cmd *cobra.Command, args []string) {
 	}
 }
 
+func runDecryptHwCmd(cmd *cobra.Command, args []string) {
+	if len(args) < 2 {
+		ImgmodUsage(cmd, nil)
+	}
+
+	imgFilename := args[0]
+	secretFilename := args[1]
+
+	outFilename, err := CalcOutFilename(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	img, err := readImage(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	secretBytes, err := ioutil.ReadFile(secretFilename)
+	if err != nil {
+		ImgmodUsage(cmd, errors.Wrapf(err, "error reading secret file"))
+	}
+
+	img, err = iimg.DecryptImageHw(img, secretBytes)
+	if err != nil {
+		ImgmodUsage(nil, err)
+	}
+
+	if err := writeImage(img, outFilename); err != nil {
+		ImgmodUsage(nil, err)
+	}
+}
+
 func runEncryptCmd(cmd *cobra.Command, args []string) {
 	if len(args) < 2 {
 		ImgmodUsage(cmd, nil)
@@ -732,6 +765,21 @@ func AddImageCommands(cmd *cobra.Command) {
 			"the image header, and recalculates the image hash.",
 		Run: runDecryptFullCmd,
 	}
+
+	decryptHwCmd := &cobra.Command{
+		Use:   "decrypthw <image> <aes-secret>",
+		Short: "Decrypts an hardware-encrypted Mynewt image file",
+		Long: "Decrypts the body of a hardware-encrypted Mynewt image file and " +
+			"removes the encryption TLVs.  The aes-secret can be 64-encoded " +
+			"or raw.",
+		Run: runDecryptHwCmd,
+	}
+
+	decryptHwCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o",
+		"", "File to write to")
+	decryptHwCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
+		"Replace input file")
+	imageCmd.AddCommand(decryptHwCmd)
 
 	decryptFullCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o",
 		"", "File to write to")
