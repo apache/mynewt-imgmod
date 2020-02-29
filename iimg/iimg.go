@@ -220,3 +220,10 @@ func EncryptImageFull(img image.Image,
 
 	return img, nil
 }
+
+func ReplaceBody(img image.Image, body []byte) (image.Image, error) {
+	delta := len(body) - len(img.Body)
+	img.Body = body
+	img.Header.ImgSz += uint32(delta)
+	return img, nil
+}

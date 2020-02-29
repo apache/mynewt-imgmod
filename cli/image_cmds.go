@@ -591,6 +591,42 @@ func runEncryptFullCmd(cmd *cobra.Command, args []string) {
 	}
 }
 
+func runSetBodyCmd(cmd *cobra.Command, args []string) {
+	if len(args) < 2 {
+		ImgmodUsage(cmd, nil)
+	}
+
+	imgFilename := args[0]
+	bodyFilename := args[1]
+
+	if bodyFilename == "" {
+		ImgmodUsage(cmd, errors.Errorf("image body required"))
+	}
+	bodyBytes, err := ioutil.ReadFile(bodyFilename)
+	if err != nil {
+		ImgmodUsage(cmd, errors.Wrapf(err, "error reading image body file"))
+	}
+
+	outFilename, err := CalcOutFilename(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	img, err := readImage(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	img, err = iimg.ReplaceBody(img, bodyBytes)
+	if err != nil {
+		ImgmodUsage(nil, err)
+	}
+
+	if err := writeImage(img, outFilename); err != nil {
+		ImgmodUsage(nil, err)
+	}
+}
+
 func runVerifyCmd(cmd *cobra.Command, args []string) {
 	if len(args) < 1 {
 		ImgmodUsage(cmd, nil)
@@ -819,6 +855,19 @@ func AddImageCommands(cmd *cobra.Command) {
 		"Replace input file")
 
 	imageCmd.AddCommand(encryptFullCmd)
+
+	setBodyCmd := &cobra.Command{
+		Use:   "setbody <image> <body-filename>",
+		Short: "Replaces an image's body with a file's contents",
+		Run:   runSetBodyCmd,
+	}
+
+	setBodyCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o",
+		"", "File to write to")
+	setBodyCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
+		"Replace input file")
+
+	imageCmd.AddCommand(setBodyCmd)
 
 	verifyCmd := &cobra.Command{
 		Use:   "verify <image>",
