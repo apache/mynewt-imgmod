@@ -372,9 +372,8 @@ func runAddsigCmd(cmd *cobra.Command, args []string) {
 	keyFilename := args[1]
 	sigFilename := args[2]
 
-	sigType, err := strconv.Atoi(args[3])
-	if err != nil || sigType < 0 || sigType > 255 ||
-		!image.ImageTlvTypeIsSig(uint8(sigType)) {
+	sigType, err := strconv.ParseUint(args[3], 0, 8)
+	if err != nil || !image.ImageTlvTypeIsSig(uint8(sigType)) {
 
 		ImgmodUsage(cmd, errors.Errorf("invalid signature type: %s", args[3]))
 	}
