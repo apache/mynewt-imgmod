@@ -323,12 +323,41 @@ func runHashableCmd(cmd *cobra.Command, args []string) {
 	}
 	defer f.Close()
 
-	if err := binary.Write(f, binary.LittleEndian, &img.Header); err != nil {
+	err = binary.Write(f, binary.LittleEndian, &img.Header)
+	if err != nil {
 		ImgmodUsage(nil, errors.Wrapf(err, "error writing image header"))
 	}
+
+	_, err = f.Write(img.Pad)
+	if err != nil {
+		ImgmodUsage(nil, errors.Wrapf(err, "error writing image padding"))
+	}
+
 	_, err = f.Write(img.Body)
 	if err != nil {
 		ImgmodUsage(nil, errors.Wrapf(err, "error writing image body"))
+	}
+
+	if len(img.ProtTlvs) > 0 {
+		trailer := image.ImageTrailer{
+			Magic:     image.IMAGE_PROT_TRAILER_MAGIC,
+			TlvTotLen: img.Header.ProtSz,
+		}
+		err = binary.Write(f, binary.LittleEndian, trailer)
+		if err != nil {
+			ImgmodUsage(nil, errors.Wrapf(err, "error writing image protected TLV trailer"))
+		}
+
+		for _, t := range img.ProtTlvs {
+			err = binary.Write(f, binary.LittleEndian, t.Header)
+			if err != nil {
+				ImgmodUsage(nil, errors.Wrapf(err, "error writing image protected TLVs"))
+			}
+			_, err = f.Write(t.Data)
+			if err != nil {
+				ImgmodUsage(nil, errors.Wrapf(err, "error writing image protected TLVs"))
+			}
+		}
 	}
 
 	iutil.Printf("Wrote hashable content to %s\n", outFilename)
