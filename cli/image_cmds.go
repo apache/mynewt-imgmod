@@ -693,6 +693,33 @@ func runExtractBodyCmd(cmd *cobra.Command, args []string) {
 	}
 }
 
+func runRehashImgCmd(cmd *cobra.Command, args []string) {
+	if len(args) < 1 {
+		ImgmodUsage(cmd, nil)
+	}
+
+	imgFilename := args[0]
+
+	outFilename, err := CalcOutFilename(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	img, err := readImage(imgFilename)
+	if err != nil {
+		ImgmodUsage(cmd, err)
+	}
+
+	img, err = iimg.RecalcHash(img)
+	if err != nil {
+		ImgmodUsage(nil, err)
+	}
+
+	if err := writeImage(img, outFilename); err != nil {
+		ImgmodUsage(nil, err)
+	}
+}
+
 func AddImageCommands(cmd *cobra.Command) {
 	imageCmd := &cobra.Command{
 		Use:   "image",
@@ -910,4 +937,17 @@ func AddImageCommands(cmd *cobra.Command) {
 	}
 
 	imageCmd.AddCommand(extractBodyCmd)
+
+	rehashImgCmd := &cobra.Command{
+		Use:   "rehash <image>",
+		Short: "Calculates an image's hash and replaces its SHA256 TLV",
+		Run:   runRehashImgCmd,
+	}
+
+	rehashImgCmd.PersistentFlags().StringVarP(&OptOutFilename, "outfile", "o",
+		"", "File to write to")
+	rehashImgCmd.PersistentFlags().BoolVarP(&OptInPlace, "inplace", "i", false,
+		"Replace input file")
+
+	imageCmd.AddCommand(rehashImgCmd)
 }

@@ -129,8 +129,8 @@ func ExtractSecret(img *image.Image) ([]byte, error) {
 	return tlvs[0].Data, nil
 }
 
-func recalcHash(img image.Image) (image.Image, error) {
-	hash, err := img.CalcHash()
+func RecalcHash(img image.Image) (image.Image, error) {
+	hash, err := img.CalcHash(nil)
 	if err != nil {
 		return img, err
 	}
@@ -174,7 +174,7 @@ func DecryptImageFull(img image.Image,
 	img.Header.Flags &^= image.IMAGE_F_ENCRYPTED
 
 	// The hash needs to be recalculated now that the header has changed.
-	img, err = recalcHash(img)
+	img, err = RecalcHash(img)
 	if err != nil {
 		return img, err
 	}
@@ -208,7 +208,7 @@ func EncryptImageFull(img image.Image,
 
 	// The hash needs to be recalculated now that the header has changed.
 	var err error
-	img, err = recalcHash(img)
+	img, err = RecalcHash(img)
 	if err != nil {
 		return img, err
 	}
