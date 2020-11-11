@@ -1,7 +1,7 @@
 module mynewt.apache.org/imgmod
 
 require (
-	github.com/apache/mynewt-artifact v0.0.19
+	github.com/apache/mynewt-artifact v0.0.20
 	github.com/otiai10/copy v1.0.1
 	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.4.2
